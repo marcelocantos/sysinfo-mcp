@@ -365,6 +365,104 @@ static cJSON *collect_network(void) {
     return interfaces;
 }
 
+static cJSON *collect_power(void) {
+    cJSON *power = cJSON_CreateObject();
+
+    // Find the AppleSmartBattery service
+    io_service_t battery = IOServiceGetMatchingService(
+        kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
+    if (battery != IO_OBJECT_NULL) {
+        cJSON_AddBoolToObject(power, "has_battery", 1);
+
+        // CurrentCapacity/MaxCapacity are percentages on modern macOS.
+        // AppleRawCurrentCapacity/AppleRawMaxCapacity are actual mAh.
+        CFNumberRef pct = IORegistryEntryCreateCFProperty(
+            battery, CFSTR("CurrentCapacity"), NULL, 0);
+        if (pct) {
+            int p = 0;
+            CFNumberGetValue(pct, kCFNumberIntType, &p);
+            cJSON_AddNumberToObject(power, "battery_percent", p);
+            CFRelease(pct);
+        }
+
+        CFNumberRef rawcur = IORegistryEntryCreateCFProperty(
+            battery, CFSTR("AppleRawCurrentCapacity"), NULL, 0);
+        if (rawcur) {
+            int mah = 0;
+            CFNumberGetValue(rawcur, kCFNumberIntType, &mah);
+            cJSON_AddNumberToObject(power, "capacity_mah", mah);
+            CFRelease(rawcur);
+        }
+
+        CFNumberRef rawmax = IORegistryEntryCreateCFProperty(
+            battery, CFSTR("AppleRawMaxCapacity"), NULL, 0);
+        if (rawmax) {
+            int mah = 0;
+            CFNumberGetValue(rawmax, kCFNumberIntType, &mah);
+            cJSON_AddNumberToObject(power, "max_capacity_mah", mah);
+            CFRelease(rawmax);
+        }
+
+        CFNumberRef designcap = IORegistryEntryCreateCFProperty(
+            battery, CFSTR("DesignCapacity"), NULL, 0);
+        if (designcap && rawmax) {
+            int design = 0, max = 0;
+            CFNumberGetValue(designcap, kCFNumberIntType, &design);
+            CFNumberGetValue(rawmax, kCFNumberIntType, &max);
+            if (design > 0) {
+                cJSON_AddNumberToObject(power, "battery_health_percent",
+                                        (double)max * 100.0 / design);
+            }
+        }
+        if (designcap) CFRelease(designcap);
+        if (rawmax) CFRelease(rawmax);
+
+        CFBooleanRef charging = IORegistryEntryCreateCFProperty(
+            battery, CFSTR("IsCharging"), NULL, 0);
+        if (charging) {
+            cJSON_AddBoolToObject(power, "charging",
+                                  CFBooleanGetValue(charging));
+            CFRelease(charging);
+        }
+
+        CFBooleanRef external = IORegistryEntryCreateCFProperty(
+            battery, CFSTR("ExternalConnected"), NULL, 0);
+        if (external) {
+            cJSON_AddStringToObject(power, "power_source",
+                                    CFBooleanGetValue(external)
+                                        ? "ac" : "battery");
+            CFRelease(external);
+        }
+
+        CFNumberRef cycles = IORegistryEntryCreateCFProperty(
+            battery, CFSTR("CycleCount"), NULL, 0);
+        if (cycles) {
+            int n = 0;
+            CFNumberGetValue(cycles, kCFNumberIntType, &n);
+            cJSON_AddNumberToObject(power, "cycle_count", n);
+            CFRelease(cycles);
+        }
+
+        CFNumberRef timeleft = IORegistryEntryCreateCFProperty(
+            battery, CFSTR("TimeRemaining"), NULL, 0);
+        if (timeleft) {
+            int mins = 0;
+            CFNumberGetValue(timeleft, kCFNumberIntType, &mins);
+            if (mins > 0 && mins < 6000) {
+                cJSON_AddNumberToObject(power, "time_remaining_minutes", mins);
+            }
+            CFRelease(timeleft);
+        }
+
+        IOObjectRelease(battery);
+    } else {
+        cJSON_AddBoolToObject(power, "has_battery", 0);
+        cJSON_AddStringToObject(power, "power_source", "ac");
+    }
+
+    return power;
+}
+
 static cJSON *collect_thermal(void) {
     cJSON *thermal = cJSON_CreateObject();
 
@@ -472,6 +570,7 @@ static cJSON *handle_tools_list(void) {
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("disk"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("os"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("network"));
+    cJSON_AddItemToArray(cat_enum, cJSON_CreateString("power"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("thermal"));
     cJSON_AddItemToObject(items, "enum", cat_enum);
     cJSON_AddItemToObject(cat, "items", items);
@@ -524,6 +623,7 @@ static cJSON *handle_tools_call(cJSON *params) {
     if (WANT("disk"))    cJSON_AddItemToObject(data, "disk", collect_disk());
     if (WANT("os"))      cJSON_AddItemToObject(data, "os", collect_os());
     if (WANT("network")) cJSON_AddItemToObject(data, "network", collect_network());
+    if (WANT("power"))   cJSON_AddItemToObject(data, "power", collect_power());
     if (WANT("thermal")) cJSON_AddItemToObject(data, "thermal", collect_thermal());
 
     #undef WANT
