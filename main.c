@@ -23,6 +23,7 @@
 // System info collectors
 // ---------------------------------------------------------------------------
 
+// CPU info: core counts, P/E split (Apple Silicon), brand string, frequency.
 static cJSON *collect_cpu(void) {
     cJSON *cpu = cJSON_CreateObject();
 
@@ -67,6 +68,7 @@ static cJSON *collect_cpu(void) {
     return cpu;
 }
 
+// Memory stats: total, free, used, compressed bytes via vm_statistics64.
 static cJSON *collect_memory(void) {
     cJSON *mem = cJSON_CreateObject();
 
@@ -99,6 +101,7 @@ static cJSON *collect_memory(void) {
     return mem;
 }
 
+// GPU info via IOKit IOAccelerator: model, VRAM (discrete), core count (Apple Silicon).
 static cJSON *collect_gpu(void) {
     cJSON *gpus = cJSON_CreateArray();
 
@@ -179,6 +182,7 @@ static cJSON *collect_gpu(void) {
     return gpus;
 }
 
+// Disk usage for root filesystem via statvfs.
 static cJSON *collect_disk(void) {
     cJSON *disks = cJSON_CreateArray();
 
@@ -198,6 +202,7 @@ static cJSON *collect_disk(void) {
     return disks;
 }
 
+// OS info: uname fields, macOS version, hostname, boot time.
 static cJSON *collect_os(void) {
     cJSON *os = cJSON_CreateObject();
 
@@ -233,6 +238,7 @@ static cJSON *collect_os(void) {
     return os;
 }
 
+// Network interfaces: name, IPv4/IPv6, MAC, primary flag, router.
 static cJSON *collect_network(void) {
     cJSON *interfaces = cJSON_CreateArray();
 
@@ -368,6 +374,7 @@ static cJSON *collect_network(void) {
     return interfaces;
 }
 
+// Battery/power info via AppleSmartBattery IOKit service.
 static cJSON *collect_power(void) {
     cJSON *power = cJSON_CreateObject();
 
@@ -466,6 +473,7 @@ static cJSON *collect_power(void) {
     return power;
 }
 
+// Thermal pressure level via kern.thermalpressure sysctl.
 static cJSON *collect_thermal(void) {
     cJSON *thermal = cJSON_CreateObject();
 
@@ -605,7 +613,7 @@ static cJSON *handle_tools_call(cJSON *params) {
     cJSON *args = cJSON_GetObjectItem(params, "arguments");
     cJSON *cats = args ? cJSON_GetObjectItem(args, "categories") : NULL;
 
-    // Helper to check if a category is requested
+    // Evaluates to 1 if the named category is requested (present in cats array, or cats is absent/not an array meaning 'all').
     #define WANT(name) ({ \
         int _w = 1; \
         if (cats && cJSON_IsArray(cats)) { \
