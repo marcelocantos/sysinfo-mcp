@@ -9,8 +9,13 @@
 #include <sys/utsname.h>
 #include <mach/mach.h>
 #include <mach/host_info.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <net/if_dl.h>
+#include <arpa/inet.h>
 #include <IOKit/IOKitLib.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <SystemConfiguration/SystemConfiguration.h>
 
 #include "vendor/cjson/cJSON.h"
 
@@ -228,6 +233,138 @@ static cJSON *collect_os(void) {
     return os;
 }
 
+static cJSON *collect_network(void) {
+    cJSON *interfaces = cJSON_CreateArray();
+
+    struct ifaddrs *ifap, *ifa;
+    if (getifaddrs(&ifap) != 0) return interfaces;
+
+    // First pass: collect interface names with their addresses
+    // Group by interface name
+    for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr) continue;
+        if (!(ifa->ifa_flags & IFF_UP)) continue;
+
+        // Skip loopback
+        if (ifa->ifa_flags & IFF_LOOPBACK) continue;
+
+        int family = ifa->ifa_addr->sa_family;
+        if (family != AF_INET && family != AF_INET6 && family != AF_LINK)
+            continue;
+
+        // Find or create interface entry
+        cJSON *iface = NULL;
+        int n = cJSON_GetArraySize(interfaces);
+        for (int i = 0; i < n; i++) {
+            cJSON *entry = cJSON_GetArrayItem(interfaces, i);
+            cJSON *nm = cJSON_GetObjectItem(entry, "name");
+            if (nm && strcmp(nm->valuestring, ifa->ifa_name) == 0) {
+                iface = entry;
+                break;
+            }
+        }
+        if (!iface) {
+            iface = cJSON_CreateObject();
+            cJSON_AddStringToObject(iface, "name", ifa->ifa_name);
+            cJSON_AddItemToArray(interfaces, iface);
+        }
+
+        if (family == AF_INET) {
+            char addr[INET_ADDRSTRLEN];
+            struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
+            inet_ntop(AF_INET, &sa->sin_addr, addr, sizeof(addr));
+            cJSON_AddStringToObject(iface, "ipv4", addr);
+        } else if (family == AF_INET6) {
+            char addr[INET6_ADDRSTRLEN];
+            struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)ifa->ifa_addr;
+            inet_ntop(AF_INET6, &sa6->sin6_addr, addr, sizeof(addr));
+            // Only add the first IPv6 (skip link-local fe80:: clutter)
+            if (!cJSON_GetObjectItem(iface, "ipv6") &&
+                strncmp(addr, "fe80:", 5) != 0) {
+                cJSON_AddStringToObject(iface, "ipv6", addr);
+            }
+        } else if (family == AF_LINK) {
+            struct sockaddr_dl *sdl = (struct sockaddr_dl *)ifa->ifa_addr;
+            if (sdl->sdl_alen == 6) {
+                unsigned char *mac = (unsigned char *)LLADDR(sdl);
+                char macstr[18];
+                snprintf(macstr, sizeof(macstr),
+                         "%02x:%02x:%02x:%02x:%02x:%02x",
+                         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                // Skip zero MACs
+                if (strcmp(macstr, "00:00:00:00:00:00") != 0) {
+                    cJSON_AddStringToObject(iface, "mac", macstr);
+                }
+            }
+        }
+    }
+    freeifaddrs(ifap);
+
+    // Add Wi-Fi SSID if available (via CoreWLAN through SystemConfiguration)
+    SCDynamicStoreRef store = SCDynamicStoreCreate(
+        NULL, CFSTR("sysinfo-mcp"), NULL, NULL);
+    if (store) {
+        CFStringRef key = SCDynamicStoreKeyCreateNetworkInterface(
+            NULL, kSCDynamicStoreDomainState);
+        CFPropertyListRef val = SCDynamicStoreCopyValue(store, key);
+        CFRelease(key);
+        if (val) CFRelease(val);
+
+        // Get primary interface and its IPv4 router
+        CFDictionaryRef global = SCDynamicStoreCopyValue(store,
+            SCDynamicStoreKeyCreateNetworkGlobalEntity(
+                NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4));
+        if (global) {
+            CFStringRef primary = CFDictionaryGetValue(global,
+                kSCDynamicStorePropNetPrimaryInterface);
+            if (primary) {
+                char pname[64];
+                CFStringGetCString(primary, pname, sizeof(pname),
+                                   kCFStringEncodingUTF8);
+                // Mark the primary interface
+                int n = cJSON_GetArraySize(interfaces);
+                for (int i = 0; i < n; i++) {
+                    cJSON *entry = cJSON_GetArrayItem(interfaces, i);
+                    cJSON *nm = cJSON_GetObjectItem(entry, "name");
+                    if (nm && strcmp(nm->valuestring, pname) == 0) {
+                        cJSON_AddBoolToObject(entry, "primary", 1);
+                        break;
+                    }
+                }
+
+                // Get router
+                CFStringRef router = CFDictionaryGetValue(global,
+                    kSCEntNetIPv4);
+                if (router) {
+                    // Router is in the Router key
+                    CFArrayRef routers = CFDictionaryGetValue(global,
+                        CFSTR("Router"));
+                    if (routers && CFGetTypeID(routers) == CFStringGetTypeID()) {
+                        char rbuf[64];
+                        CFStringGetCString((CFStringRef)routers, rbuf,
+                                           sizeof(rbuf),
+                                           kCFStringEncodingUTF8);
+                        // Add to primary interface
+                        int nn = cJSON_GetArraySize(interfaces);
+                        for (int j = 0; j < nn; j++) {
+                            cJSON *entry = cJSON_GetArrayItem(interfaces, j);
+                            cJSON *nm = cJSON_GetObjectItem(entry, "name");
+                            if (nm && strcmp(nm->valuestring, pname) == 0) {
+                                cJSON_AddStringToObject(entry, "router", rbuf);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            CFRelease(global);
+        }
+        CFRelease(store);
+    }
+
+    return interfaces;
+}
+
 static cJSON *collect_thermal(void) {
     cJSON *thermal = cJSON_CreateObject();
 
@@ -257,6 +394,7 @@ static cJSON *collect_all(void) {
     cJSON_AddItemToObject(result, "gpu", collect_gpu());
     cJSON_AddItemToObject(result, "disk", collect_disk());
     cJSON_AddItemToObject(result, "os", collect_os());
+    cJSON_AddItemToObject(result, "network", collect_network());
     cJSON_AddItemToObject(result, "thermal", collect_thermal());
     return result;
 }
@@ -335,7 +473,7 @@ static cJSON *handle_tools_list(void) {
     cJSON *cat = cJSON_CreateObject();
     cJSON_AddStringToObject(cat, "type", "string");
     cJSON_AddStringToObject(cat, "description",
-        "Category to report: cpu, memory, gpu, disk, os, thermal, or all");
+        "Category to report: cpu, memory, gpu, disk, os, network, thermal, or all");
     cJSON *cat_enum = cJSON_CreateArray();
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("all"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("cpu"));
@@ -343,6 +481,7 @@ static cJSON *handle_tools_list(void) {
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("gpu"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("disk"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("os"));
+    cJSON_AddItemToArray(cat_enum, cJSON_CreateString("network"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("thermal"));
     cJSON_AddItemToObject(cat, "enum", cat_enum);
     cJSON_AddItemToObject(props, "category", cat);
@@ -392,6 +531,8 @@ static cJSON *handle_tools_call(cJSON *params) {
         data = collect_disk();
     } else if (strcmp(category, "os") == 0) {
         data = collect_os();
+    } else if (strcmp(category, "network") == 0) {
+        data = collect_network();
     } else if (strcmp(category, "thermal") == 0) {
         data = collect_thermal();
     } else {

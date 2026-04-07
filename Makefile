@@ -3,7 +3,7 @@
 
 CC      ?= clang
 CFLAGS  := -Wall -Wextra -Werror -O2 -std=c17
-LDFLAGS := -framework IOKit -framework CoreFoundation
+LDFLAGS := -framework IOKit -framework CoreFoundation -framework SystemConfiguration
 
 PREFIX  ?= /usr/local
 BINDIR  := $(PREFIX)/bin
