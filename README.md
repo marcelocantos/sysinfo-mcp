@@ -192,6 +192,12 @@ Accepts an optional `categories` array. Omitting it returns all categories.
 }
 ```
 
+## Agent guide
+
+If you use an agentic coding tool, include
+[`docs/agents-guide.md`](docs/agents-guide.md) in your project context,
+or run `sysinfo-mcp --help-agent` for a self-contained reference.
+
 ## Requirements
 
 - macOS (Apple Silicon or Intel)
