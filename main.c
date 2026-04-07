@@ -1,6 +1,8 @@
 // Copyright 2026 Marcelo Cantos
 // SPDX-License-Identifier: Apache-2.0
 
+#define VERSION "0.1.0"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -542,7 +544,7 @@ static cJSON *handle_initialize(void) {
 
     cJSON *info = cJSON_CreateObject();
     cJSON_AddStringToObject(info, "name", "sysinfo");
-    cJSON_AddStringToObject(info, "version", "0.1.0");
+    cJSON_AddStringToObject(info, "version", VERSION);
     cJSON_AddItemToObject(result, "serverInfo", info);
 
     cJSON_AddStringToObject(result, "protocolVersion", "2024-11-05");
