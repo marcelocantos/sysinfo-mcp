@@ -4,22 +4,39 @@ A lightweight C MCP server for macOS that exposes system hardware and OS informa
 
 ## Quick start
 
-```bash
-# Build and install
-make
-make install          # installs to /usr/local/bin/sysinfo-mcp
+Install and register with Claude Code:
 
-# Register with Claude Code
-claude mcp add sysinfo -- /usr/local/bin/sysinfo-mcp
+```bash
+brew install marcelocantos/tap/sysinfo-mcp
+claude mcp add --scope user sysinfo -- sysinfo-mcp
 ```
 
-Or add manually to `~/.claude.json`:
+Restart your Claude Code session to pick up the new server.
+
+Or tell your agent:
+
+```
+Install sysinfo-mcp from https://github.com/marcelocantos/sysinfo-mcp — brew install,
+register as an MCP server, and restart the session. Follow the agents-guide.md in the repo.
+```
+
+### Alternative: build from source
+
+```bash
+make
+make install          # installs to /usr/local/bin/sysinfo-mcp
+claude mcp add --scope user sysinfo -- sysinfo-mcp
+```
+
+### Manual MCP client configuration
+
+Add to your MCP client config (e.g., `~/.claude.json`):
 
 ```json
 {
   "mcpServers": {
     "sysinfo": {
-      "command": "/usr/local/bin/sysinfo-mcp"
+      "command": "sysinfo-mcp"
     }
   }
 }

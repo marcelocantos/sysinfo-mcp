@@ -36,7 +36,32 @@ Makefile            — build entry point
 
 **Main loop** (`main.c:649–702`): reads newline-delimited JSON-RPC from stdin, dispatches on `method` string (`initialize`, `notifications/initialized`, `tools/list`, `tools/call`), writes responses to stdout. Both streams are line-buffered.
 
-## Build
+## Installation
+
+Installation is a **multi-step process** — it is not complete until all steps succeed.
+
+1. Install the binary:
+   ```bash
+   brew install marcelocantos/tap/sysinfo-mcp
+   ```
+2. Register as an MCP server:
+   ```bash
+   claude mcp add --scope user sysinfo -- sysinfo-mcp
+   ```
+3. **Restart the agent session** to pick up the new server.
+
+For other MCP clients, add to the client config:
+```json
+{
+  "mcpServers": {
+    "sysinfo": {
+      "command": "sysinfo-mcp"
+    }
+  }
+}
+```
+
+## Build from source
 
 ```bash
 make
