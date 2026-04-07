@@ -29,6 +29,15 @@ optional fields) are not breaking.
 | Error code `-32601` | Method not found | Stable |
 | Error code `-32602` | Invalid params | Stable |
 
+### CLI flags
+
+| Flag | Behaviour | Status |
+|---|---|---|
+| `--version` | Prints `sysinfo-mcp <VERSION>` and exits | Stable |
+| `--help` | Prints usage summary and exits | Stable |
+| `--help-agent` | Prints usage + embedded agent guide and exits | Stable |
+| Unknown flag | Prints error + usage to stderr, exits 1 | Stable |
+
 ### Tool: `system_info`
 
 | Item | Value | Status |
@@ -184,10 +193,6 @@ Needs verification against Apple documentation before 1.0.
 
 The following must be resolved before 1.0 is tagged.
 
-**CLI interface**
-- No `--version`, `--help`, or `--help-agent` flags. The binary must support
-  all three before 1.0 (required by project convention).
-
 **Testing**
 - No automated tests exist. A baseline test suite is required: at minimum,
   round-trip JSON-RPC tests for `initialize`, `tools/list`, and
@@ -196,11 +201,6 @@ The following must be resolved before 1.0 is tagged.
 **CI**
 - No CI pipeline. A build-and-test workflow (GitHub Actions, macOS arm64) is
   required before 1.0.
-
-**Version management**
-- No version macro in source. The version string `"0.1.0"` in
-  `handle_initialize()` is a bare literal. A `SYSINFO_VERSION` macro (or
-  equivalent) should be the single source of truth, injectable at build time.
 
 **Disk reporting**
 - Only `/` is reported. This is a known limitation. Before 1.0, decide whether
