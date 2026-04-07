@@ -13,3 +13,8 @@ maintenance activities. Append-only — newest entries at the bottom.
   - Network router field logic defect (STABILITY.md gap)
   - Thermal pressure mapping unverified against Apple docs (STABILITY.md gap)
   - WANT macro uses GCC statement-expression extension (non-portable)
+
+## 2026-04-08 — /release v0.2.0
+
+- **Commit**: `a090425`
+- **Outcome**: Released v0.2.0 (darwin-arm64). Added complete MCP installation instructions to README and agents-guide, Homebrew install command, copy-pasteable agent prompt.
