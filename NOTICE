@@ -1,0 +1,9 @@
+sysinfo-mcp
+Copyright 2026 Marcelo Cantos
+
+This product includes software developed by third parties:
+
+- cJSON (https://github.com/DaveGamble/cJSON)
+  Copyright (c) 2009-2017 Dave Gamble and cJSON contributors
+  Licensed under the MIT License
+  See vendor/cjson/LICENSE for details

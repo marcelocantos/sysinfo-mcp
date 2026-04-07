@@ -2,3 +2,7 @@ sysinfo-mcp
 *.o
 *.dSYM/
 .DS_Store
+compile_commands.json
+.cache/
+tags
+TAGS

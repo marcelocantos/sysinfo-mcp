@@ -270,10 +270,12 @@ static cJSON *collect_network(void) {
         }
 
         if (family == AF_INET) {
-            char addr[INET_ADDRSTRLEN];
-            struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
-            inet_ntop(AF_INET, &sa->sin_addr, addr, sizeof(addr));
-            cJSON_AddStringToObject(iface, "ipv4", addr);
+            if (!cJSON_GetObjectItem(iface, "ipv4")) {
+                char addr[INET_ADDRSTRLEN];
+                struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
+                inet_ntop(AF_INET, &sa->sin_addr, addr, sizeof(addr));
+                cJSON_AddStringToObject(iface, "ipv4", addr);
+            }
         } else if (family == AF_INET6) {
             char addr[INET6_ADDRSTRLEN];
             struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)ifa->ifa_addr;
@@ -311,9 +313,10 @@ static cJSON *collect_network(void) {
         if (val) CFRelease(val);
 
         // Get primary interface and its IPv4 router
-        CFDictionaryRef global = SCDynamicStoreCopyValue(store,
-            SCDynamicStoreKeyCreateNetworkGlobalEntity(
-                NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4));
+        CFStringRef globalKey = SCDynamicStoreKeyCreateNetworkGlobalEntity(
+            NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
+        CFDictionaryRef global = SCDynamicStoreCopyValue(store, globalKey);
+        CFRelease(globalKey);
         if (global) {
             CFStringRef primary = CFDictionaryGetValue(global,
                 kSCDynamicStorePropNetPrimaryInterface);
@@ -628,7 +631,7 @@ static cJSON *handle_tools_call(cJSON *params) {
 
     #undef WANT
 
-    char *text = cJSON_Print(data);
+    char *text = cJSON_PrintUnformatted(data);
     cJSON_Delete(data);
 
     cJSON *result = cJSON_CreateObject();
@@ -682,7 +685,11 @@ int main(void) {
             send_response(id, handle_tools_list());
         } else if (strcmp(m, "tools/call") == 0) {
             cJSON *params = cJSON_GetObjectItem(req, "params");
-            send_response(id, handle_tools_call(params));
+            if (!params || !cJSON_IsObject(params)) {
+                send_error(id, -32602, "Invalid params");
+            } else {
+                send_response(id, handle_tools_call(params));
+            }
         } else {
             send_error(id, -32601, "Method not found");
         }
