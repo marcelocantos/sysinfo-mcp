@@ -387,17 +387,6 @@ static cJSON *collect_thermal(void) {
     return thermal;
 }
 
-static cJSON *collect_all(void) {
-    cJSON *result = cJSON_CreateObject();
-    cJSON_AddItemToObject(result, "cpu", collect_cpu());
-    cJSON_AddItemToObject(result, "memory", collect_memory());
-    cJSON_AddItemToObject(result, "gpu", collect_gpu());
-    cJSON_AddItemToObject(result, "disk", collect_disk());
-    cJSON_AddItemToObject(result, "os", collect_os());
-    cJSON_AddItemToObject(result, "network", collect_network());
-    cJSON_AddItemToObject(result, "thermal", collect_thermal());
-    return result;
-}
 
 // ---------------------------------------------------------------------------
 // MCP JSON-RPC protocol
@@ -463,19 +452,20 @@ static cJSON *handle_tools_list(void) {
         "Report hardware and OS information: CPU (cores, brand, P/E split), "
         "memory (total, free, used, compressed), GPU (model, cores, VRAM), "
         "disk (total, free, used), OS (version, hostname, uptime), and "
-        "thermal pressure. Use 'category' to request a specific section or "
-        "omit for all.");
+        "thermal pressure. Pass 'categories' to select specific sections "
+        "(e.g. [\"cpu\", \"memory\"]) or omit for all.");
 
     cJSON *schema = cJSON_CreateObject();
     cJSON_AddStringToObject(schema, "type", "object");
 
     cJSON *props = cJSON_CreateObject();
     cJSON *cat = cJSON_CreateObject();
-    cJSON_AddStringToObject(cat, "type", "string");
+    cJSON_AddStringToObject(cat, "type", "array");
     cJSON_AddStringToObject(cat, "description",
-        "Category to report: cpu, memory, gpu, disk, os, network, thermal, or all");
+        "Sections to include. Omit for all.");
+    cJSON *items = cJSON_CreateObject();
+    cJSON_AddStringToObject(items, "type", "string");
     cJSON *cat_enum = cJSON_CreateArray();
-    cJSON_AddItemToArray(cat_enum, cJSON_CreateString("all"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("cpu"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("memory"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("gpu"));
@@ -483,8 +473,9 @@ static cJSON *handle_tools_list(void) {
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("os"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("network"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("thermal"));
-    cJSON_AddItemToObject(cat, "enum", cat_enum);
-    cJSON_AddItemToObject(props, "category", cat);
+    cJSON_AddItemToObject(items, "enum", cat_enum);
+    cJSON_AddItemToObject(cat, "items", items);
+    cJSON_AddItemToObject(props, "categories", cat);
 
     cJSON_AddItemToObject(schema, "properties", props);
     cJSON_AddItemToObject(tool, "inputSchema", schema);
@@ -508,36 +499,34 @@ static cJSON *handle_tools_call(cJSON *params) {
         return result;
     }
 
-    // Parse category
-    const char *category = "all";
+    // Parse categories array (omit = all)
     cJSON *args = cJSON_GetObjectItem(params, "arguments");
-    if (args) {
-        cJSON *cat = cJSON_GetObjectItem(args, "category");
-        if (cat && cJSON_IsString(cat)) {
-            category = cat->valuestring;
-        }
-    }
+    cJSON *cats = args ? cJSON_GetObjectItem(args, "categories") : NULL;
 
-    cJSON *data;
-    if (strcmp(category, "all") == 0) {
-        data = collect_all();
-    } else if (strcmp(category, "cpu") == 0) {
-        data = collect_cpu();
-    } else if (strcmp(category, "memory") == 0) {
-        data = collect_memory();
-    } else if (strcmp(category, "gpu") == 0) {
-        data = collect_gpu();
-    } else if (strcmp(category, "disk") == 0) {
-        data = collect_disk();
-    } else if (strcmp(category, "os") == 0) {
-        data = collect_os();
-    } else if (strcmp(category, "network") == 0) {
-        data = collect_network();
-    } else if (strcmp(category, "thermal") == 0) {
-        data = collect_thermal();
-    } else {
-        data = collect_all();
-    }
+    // Helper to check if a category is requested
+    #define WANT(name) ({ \
+        int _w = 1; \
+        if (cats && cJSON_IsArray(cats)) { \
+            _w = 0; \
+            cJSON *_c; \
+            cJSON_ArrayForEach(_c, cats) { \
+                if (cJSON_IsString(_c) && strcmp(_c->valuestring, name) == 0) \
+                    { _w = 1; break; } \
+            } \
+        } \
+        _w; \
+    })
+
+    cJSON *data = cJSON_CreateObject();
+    if (WANT("cpu"))     cJSON_AddItemToObject(data, "cpu", collect_cpu());
+    if (WANT("memory"))  cJSON_AddItemToObject(data, "memory", collect_memory());
+    if (WANT("gpu"))     cJSON_AddItemToObject(data, "gpu", collect_gpu());
+    if (WANT("disk"))    cJSON_AddItemToObject(data, "disk", collect_disk());
+    if (WANT("os"))      cJSON_AddItemToObject(data, "os", collect_os());
+    if (WANT("network")) cJSON_AddItemToObject(data, "network", collect_network());
+    if (WANT("thermal")) cJSON_AddItemToObject(data, "thermal", collect_thermal());
+
+    #undef WANT
 
     char *text = cJSON_Print(data);
     cJSON_Delete(data);
