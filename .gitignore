@@ -1,0 +1,4 @@
+sysinfo-mcp
+*.o
+*.dSYM/
+.DS_Store
