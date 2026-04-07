@@ -656,7 +656,108 @@ static cJSON *handle_tools_call(cJSON *params) {
     return result;
 }
 
-int main(void) {
+static const char HELP[] =
+    "sysinfo-mcp " VERSION " — MCP server for macOS system information\n"
+    "\n"
+    "Usage: sysinfo-mcp [OPTIONS]\n"
+    "\n"
+    "Runs an MCP server on stdio, exposing a single tool (system_info)\n"
+    "that reports CPU, memory, GPU, disk, OS, network, power, and thermal\n"
+    "information.\n"
+    "\n"
+    "Options:\n"
+    "  --version      Print version and exit\n"
+    "  --help         Print this help and exit\n"
+    "  --help-agent   Print agent guide and exit\n";
+
+static const char AGENT_GUIDE[] =
+    "# Agent's Guide: sysinfo-mcp\n"
+    "\n"
+    "## What this is\n"
+    "\n"
+    "A C MCP server for macOS that reports system hardware/OS info over stdio JSON-RPC (protocol version 2024-11-05). Exposes a single tool, `system_info`, with an optional `categories` array parameter for selective reporting. No categories = all categories.\n"
+    "\n"
+    "## Repository layout\n"
+    "\n"
+    "```\n"
+    "main.c              — entire implementation (collectors + MCP protocol + main loop)\n"
+    "vendor/cjson/       — vendored cJSON library\n"
+    "Makefile            — build entry point\n"
+    "```\n"
+    "\n"
+    "## Architecture\n"
+    "\n"
+    "**Collector functions** (`main.c:26–489`) — one per category, each returns a `cJSON*`:\n"
+    "\n"
+    "| Function | Category key | Returns |\n"
+    "|---|---|---|\n"
+    "| `collect_cpu()` | `\"cpu\"` | object |\n"
+    "| `collect_memory()` | `\"memory\"` | object |\n"
+    "| `collect_gpu()` | `\"gpu\"` | array of objects |\n"
+    "| `collect_disk()` | `\"disk\"` | array of objects |\n"
+    "| `collect_os()` | `\"os\"` | object |\n"
+    "| `collect_network()` | `\"network\"` | array of interface objects |\n"
+    "| `collect_power()` | `\"power\"` | object |\n"
+    "| `collect_thermal()` | `\"thermal\"` | object |\n"
+    "\n"
+    "**Protocol handlers** (`main.c:496–647`):\n"
+    "- `handle_initialize()` — returns server capabilities and `serverInfo`\n"
+    "- `handle_tools_list()` — returns JSON Schema for `system_info` including the `categories` enum\n"
+    "- `handle_tools_call(params)` — invokes collectors via `WANT` macro, serialises result as text content\n"
+    "\n"
+    "**`WANT(name)` macro** (`main.c:609–620`): evaluates to 1 if `name` is in the `categories` array, or if `categories` was omitted entirely.\n"
+    "\n"
+    "**Main loop** (`main.c:649–702`): reads newline-delimited JSON-RPC from stdin, dispatches on `method` string (`initialize`, `notifications/initialized`, `tools/list`, `tools/call`), writes responses to stdout. Both streams are line-buffered.\n"
+    "\n"
+    "## Build\n"
+    "\n"
+    "```bash\n"
+    "make\n"
+    "```\n"
+    "\n"
+    "Requires macOS with Xcode Command Line Tools. Links: `IOKit`, `CoreFoundation`, `SystemConfiguration`.\n"
+    "\n"
+    "## Adding a new category\n"
+    "\n"
+    "1. Write a static collector: `static cJSON *collect_foo(void) { ... }` returning a `cJSON*`.\n"
+    "2. In `handle_tools_call` (around `main.c:623`), add:\n"
+    "   ```c\n"
+    "   if (WANT(\"foo\")) cJSON_AddItemToObject(data, \"foo\", collect_foo());\n"
+    "   ```\n"
+    "3. In `handle_tools_list` (around `main.c:569`), add to the enum array:\n"
+    "   ```c\n"
+    "   cJSON_AddItemToArray(cat_enum, cJSON_CreateString(\"foo\"));\n"
+    "   ```\n"
+    "4. Update the tool description string in `handle_tools_list` to mention the new category.\n"
+    "\n"
+    "## Key conventions\n"
+    "\n"
+    "- All JSON construction uses cJSON. Never use a different JSON library.\n"
+    "- Collectors must not abort on missing data — use `if (sysctlbyname(...) == 0)` guards and emit only fields that are available.\n"
+    "- IOKit objects must be released with `IOObjectRelease`; CF objects with `CFRelease`. No leaks on error paths.\n"
+    "- Error responses use `send_error(id, code, message)`; success responses use `send_response(id, result)`.\n"
+    "- The `WANT` macro is defined locally inside `handle_tools_call` and `#undef`-ed after use.\n";
+
+int main(int argc, char **argv) {
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--version") == 0) {
+            printf("sysinfo-mcp %s\n", VERSION);
+            return 0;
+        } else if (strcmp(argv[i], "--help") == 0) {
+            fputs(HELP, stdout);
+            return 0;
+        } else if (strcmp(argv[i], "--help-agent") == 0) {
+            fputs(HELP, stdout);
+            fputs("\n", stdout);
+            fputs(AGENT_GUIDE, stdout);
+            return 0;
+        } else {
+            fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            fputs(HELP, stderr);
+            return 1;
+        }
+    }
+
     // Line-buffered stdin/stdout for JSON-RPC over stdio
     setvbuf(stdin, NULL, _IOLBF, 0);
     setvbuf(stdout, NULL, _IOLBF, 0);
