@@ -5,6 +5,14 @@ CC      ?= clang
 CFLAGS  := -Wall -Wextra -Werror -O2 -std=c17
 LDFLAGS := -framework IOKit -framework CoreFoundation -framework SystemConfiguration
 
+# Auto-wrap CC with ccache if installed. Disable with CCACHE=no.
+CCACHE ?= $(shell command -v ccache 2>/dev/null)
+ifneq ($(CCACHE),)
+ifneq ($(CCACHE),no)
+CC := $(CCACHE) $(CC)
+endif
+endif
+
 PREFIX  ?= /usr/local
 BINDIR  := $(PREFIX)/bin
 
