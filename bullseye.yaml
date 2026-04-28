@@ -1,12 +1,70 @@
-schema_version: 1
+schema_version: 3
 targets:
   T1:
-    name: "Project is open-sourced and released"
+    name: Project is open-sourced and released
     status: achieved
     value: 1.0
     cost: 1.0
     acceptance:
-    - "sysinfo-mcp is a public repo on GitHub with proper licensing, documentation, CI, and an initial release on Homebrew tap."
-    context: "Repo public, v0.1.0 released with darwin-arm64 binary. Homebrew formula pending HOMEBREW_TAP_TOKEN secret setup."
-    discovered: "2026-04-12"
-    achieved: "2026-04-12"
+    - sysinfo-mcp is a public repo on GitHub with proper licensing, documentation, CI, and an initial release on Homebrew tap.
+    context: Repo public, v0.1.0 released with darwin-arm64 binary. Homebrew formula pending HOMEBREW_TAP_TOKEN secret setup.
+    origin: manual
+    discovered: 2026-04-12
+    achieved: 2026-04-12
+  T2:
+    name: '`system_info` reports display configuration: per-monitor resolution, refresh rate, scale, and main-display flag'
+    status: identified
+    value: 0.0
+    cost: 0.0
+    showcase: true
+    acceptance:
+    - A new `display` (or `displays`) category is added to the `categories` enum of the `system_info` tool's schema.
+    - 'When invoked with `categories: ["display"]` (or with no categories — full report), the tool returns one entry per connected display.'
+    - 'Each display entry includes at minimum: display name (e.g. "Built-in Liquid Retina XDR", "LG ULTRAFINE"), native resolution (width × height in pixels), current logical (UI) resolution, refresh rate in Hz (decimal where the display reports a non-integer rate), scale factor, main-display flag, and connection type (internal / external / mirrored).'
+    - For ProMotion / variable-refresh displays, the entry indicates the supported range (e.g. min/max Hz) where macOS exposes it; otherwise the single steady refresh rate is reported.
+    - Implementation reads from CoreGraphics / IOKit (e.g. `CGDisplayCopyAllDisplayModes`, `CGDisplayModeGetRefreshRate`, `CGDirectDisplayID`-based queries) rather than shelling out to `system_profiler` (which is slow and locale-dependent).
+    - 'Tests cover: (a) at least one display present (a CI mac always has one); (b) main-display flag set on exactly one entry; (c) refresh rate is a positive number; (d) JSON shape stable across mac models.'
+    - README and `--help-agent` text document the new category with an example output entry.
+    context: |-
+      Today `system_info` covers cpu, memory, gpu, disk, os, network, power, thermal — but not display configuration. An agent that needs to know whether the current monitor is 60 Hz vs ProMotion has to fall back to `system_profiler SPDisplaysDataType`, which is slow, English-only, and parses brittlely.
+
+      Concrete motivating case (2026-04-28): the pageflip project is designing an exponential-backoff polling schedule for its screen-capture loop (🎯T35). Choosing the right minimum polling interval depends on the host's display refresh rate — 10 ms (100 Hz) is faster than a 60 Hz external can possibly produce new pixels; 16 ms (one frame at 60 Hz) is more honest. An agent reasoning about that trade-off should be able to ask sysinfo and get a structured answer instead of grepping `system_profiler` output.
+
+      Recommended JSON shape (illustrative):
+
+      ```json
+      {
+        "displays": [
+          {
+            "name": "Built-in Liquid Retina XDR",
+            "id": 1,
+            "main": true,
+            "connection": "internal",
+            "resolution_pixels": [3456, 2234],
+            "resolution_logical": [1728, 1117],
+            "scale": 2.0,
+            "refresh_hz": 120.0,
+            "refresh_range_hz": [10.0, 120.0],
+            "color_depth_bits": 30
+          },
+          {
+            "name": "LG ULTRAFINE",
+            "id": 2,
+            "main": false,
+            "connection": "external",
+            "resolution_pixels": [6720, 3780],
+            "resolution_logical": [3360, 1890],
+            "scale": 2.0,
+            "refresh_hz": 60.0
+          }
+        ]
+      }
+      ```
+
+      `refresh_range_hz` is optional and only set when the display is variable-refresh. `color_depth_bits` is a nice-to-have if it's cheap to query alongside the rest.
+
+      Implementation lives in C (the project's language). CoreGraphics has `CGDisplayCopyAllDisplayModes` returning an array of `CGDisplayModeRef`s; `CGDisplayModeGetRefreshRate` gives the rate (returns 0 for the built-in display on some macOS versions — fall back to `CVDisplayLink` or `IOKit` in that case). `CGGetActiveDisplayList` enumerates active displays; `CGMainDisplayID` flags the main one. Display name comes from `IODisplayCreateInfoDictionary` (`kDisplayProductName` localized strings).
+
+      This target keeps sysinfo's tight scope (read-only, no shell-outs, structured JSON) and fits cleanly into the existing categories enum. No tool-name churn, no API redesign — additive only.
+    origin: manual
+    discovered: 2026-04-28
