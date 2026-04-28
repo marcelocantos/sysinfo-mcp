@@ -62,6 +62,7 @@ Accepts an optional `categories` array. Omitting it returns all categories.
 | `network` | Network interfaces, IPs, MACs, primary/router    |
 | `power`   | Battery level, health, charging state, source    |
 | `thermal` | Thermal pressure level                           |
+| `display` | Per-monitor name, resolution, refresh, scale     |
 
 ## Output schema
 
@@ -145,6 +146,20 @@ Accepts an optional `categories` array. Omitting it returns all categories.
 |------------|--------|----------------------------------------------------|
 | `pressure` | string | `"nominal"`, `"moderate"`, `"heavy"`, `"critical"`, `"unknown"` |
 
+### `display` (array)
+
+| Field                | Type    | Notes                                                                |
+|----------------------|---------|----------------------------------------------------------------------|
+| `name`               | string  | Marketing name (e.g. `"LG ULTRAFINE"`); `"Built-in Display"` when the OS doesn't expose a product name for built-in panels (Apple Silicon) |
+| `id`                 | int     | `CGDirectDisplayID`                                                  |
+| `main`               | bool    | `true` for the main display (exactly one entry per call)            |
+| `connection`         | string  | `"internal"`, `"external"`, or `"mirrored"`                          |
+| `resolution_pixels`  | [int,int] | Native pixel dimensions of the current mode                       |
+| `resolution_logical` | [int,int] | UI / point dimensions of the current mode                         |
+| `scale`              | double  | `pixels / logical` (typically 1, 2, or 3)                            |
+| `refresh_hz`         | double  | Refresh rate; falls back to CoreVideo when CG reports 0              |
+| `refresh_range_hz`   | [double,double] | Min/max only when multiple discrete refresh rates exist for the current resolution |
+
 ## Example output
 
 ```json
@@ -205,7 +220,29 @@ Accepts an optional `categories` array. Omitting it returns all categories.
   },
   "thermal": {
     "pressure": "nominal"
-  }
+  },
+  "display": [
+    {
+      "name": "Built-in Display",
+      "id": 1,
+      "main": true,
+      "connection": "internal",
+      "resolution_pixels": [3456, 2234],
+      "resolution_logical": [1728, 1117],
+      "scale": 2,
+      "refresh_hz": 120
+    },
+    {
+      "name": "LG ULTRAFINE",
+      "id": 3,
+      "main": false,
+      "connection": "external",
+      "resolution_pixels": [6720, 3780],
+      "resolution_logical": [3360, 1890],
+      "scale": 2,
+      "refresh_hz": 60
+    }
+  ]
 }
 ```
 

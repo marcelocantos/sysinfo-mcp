@@ -1,6 +1,6 @@
 # sysinfo-mcp
 
-A lightweight C MCP server for macOS that exposes system information (CPU, memory, GPU, disk, OS, network, power, thermal) to AI tools via JSON-RPC over stdio. It implements the Model Context Protocol, presenting all system metrics as a single tool with selectable categories.
+A lightweight C MCP server for macOS that exposes system information (CPU, memory, GPU, disk, OS, network, power, thermal, display) to AI tools via JSON-RPC over stdio. It implements the Model Context Protocol, presenting all system metrics as a single tool with selectable categories.
 
 ## Build
 
@@ -25,12 +25,13 @@ The main loop reads JSON-RPC requests from stdin line by line, dispatches, and w
 | Path | Purpose |
 |---|---|
 | `main.c` | Everything: collectors, protocol layer, main loop |
-| `Makefile` | Build rules |
+| `Makefile` | Build rules (incl. `bullseye`, `test` targets) |
+| `tests/run.sh` | Smoke test driving the server over stdio |
 | `vendor/cjson/` | Vendored cJSON library |
 
 ## Conventions
 
-- macOS-only: uses IOKit, SystemConfiguration, and Mach APIs
+- macOS-only: uses IOKit, SystemConfiguration, ApplicationServices (CoreGraphics), CoreVideo, and Mach APIs
 - C17 standard (`-std=c17`)
 - Apache 2.0 license; SPDX headers on source files
 

@@ -3,7 +3,9 @@
 
 CC      ?= clang
 CFLAGS  := -Wall -Wextra -Werror -O2 -std=c17
-LDFLAGS := -framework IOKit -framework CoreFoundation -framework SystemConfiguration
+LDFLAGS := -framework IOKit -framework CoreFoundation \
+           -framework SystemConfiguration \
+           -framework ApplicationServices -framework CoreVideo
 
 # Auto-wrap CC with ccache if installed. Disable with CCACHE=no.
 CCACHE ?= $(shell command -v ccache 2>/dev/null)
@@ -19,7 +21,7 @@ BINDIR  := $(PREFIX)/bin
 SRC     := main.c vendor/cjson/cJSON.c
 BIN     := sysinfo-mcp
 
-.PHONY: all clean install bullseye
+.PHONY: all clean install test bullseye
 
 all: $(BIN)
 
@@ -33,7 +35,14 @@ install: $(BIN)
 	install -d $(BINDIR)
 	install -m 755 $(BIN) $(BINDIR)/$(BIN)
 
-bullseye: $(BIN)
+# Smoke-test the binary by driving it with JSON-RPC over stdio and
+# checking the display category contract: ≥1 entry, exactly one main,
+# positive refresh rates, stable shape.
+test: $(BIN) tests/run.sh
+	@./tests/run.sh
+
+bullseye: $(BIN) test
 	@echo "✓ build"
+	@echo "✓ tests"
 	@test -z "$$(git status --porcelain)" && echo "✓ clean tree" || \
 	 (echo "✗ dirty tree"; git status --short; exit 1)

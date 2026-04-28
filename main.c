@@ -16,8 +16,11 @@
 #include <net/if_dl.h>
 #include <arpa/inet.h>
 #include <IOKit/IOKitLib.h>
+#include <IOKit/graphics/IOGraphicsLib.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <SystemConfiguration/SystemConfiguration.h>
+#include <ApplicationServices/ApplicationServices.h>
+#include <CoreVideo/CoreVideo.h>
 
 #include "vendor/cjson/cJSON.h"
 
@@ -475,6 +478,229 @@ static cJSON *collect_power(void) {
     return power;
 }
 
+// Convert a CFString to a malloc'd UTF-8 C string. Caller frees.
+static char *cfstring_to_cstring(CFStringRef s) {
+    if (!s || CFGetTypeID(s) != CFStringGetTypeID()) return NULL;
+    CFIndex max = CFStringGetMaximumSizeForEncoding(
+        CFStringGetLength(s), kCFStringEncodingUTF8) + 1;
+    char *out = malloc(max);
+    if (out && !CFStringGetCString(s, out, max, kCFStringEncodingUTF8)) {
+        free(out);
+        out = NULL;
+    }
+    return out;
+}
+
+// Read SInt32 out of a CFNumberRef property; returns 0 if absent or wrong type.
+static SInt32 dict_int(CFDictionaryRef d, CFStringRef key) {
+    if (!d) return 0;
+    CFNumberRef n = CFDictionaryGetValue(d, key);
+    if (!n || CFGetTypeID(n) != CFNumberGetTypeID()) return 0;
+    SInt32 v = 0;
+    CFNumberGetValue(n, kCFNumberSInt32Type, &v);
+    return v;
+}
+
+// Read SInt64 (for ProductID values that don't fit in 32 bits).
+static SInt64 dict_int64(CFDictionaryRef d, CFStringRef key) {
+    if (!d) return 0;
+    CFNumberRef n = CFDictionaryGetValue(d, key);
+    if (!n || CFGetTypeID(n) != CFNumberGetTypeID()) return 0;
+    SInt64 v = 0;
+    CFNumberGetValue(n, kCFNumberSInt64Type, &v);
+    return v;
+}
+
+// Localized product name for a display, or NULL if unavailable. Caller frees.
+//
+// Walks the full IORegistry. CGDisplayIOServicePort is deprecated and returns
+// 0 on macOS 10.15+, and `IODisplayConnect` services don't exist on Apple
+// Silicon. Two property shapes are checked, covering both eras:
+//   1. Intel-era IODisplayConnect: `DisplayProductName` (localized dict)
+//      paired with `DisplayVendorID`/`DisplayProductID` integers.
+//   2. Apple-Silicon IOMobileFramebuffer: `DisplayAttributes.ProductAttributes`
+//      containing `ProductName` (CFString) plus `LegacyManufacturerID` and
+//      `ProductID` integers.
+static char *display_name(CGDirectDisplayID display_id) {
+    uint32_t want_vendor  = CGDisplayVendorNumber(display_id);
+    uint32_t want_product = CGDisplayModelNumber(display_id);
+
+    io_iterator_t iter;
+    if (IORegistryCreateIterator(kIOMainPortDefault, kIOServicePlane,
+                                 kIORegistryIterateRecursively, &iter)
+        != KERN_SUCCESS) {
+        return NULL;
+    }
+
+    char *result = NULL;
+    io_service_t serv;
+    while (!result && (serv = IOIteratorNext(iter)) != IO_OBJECT_NULL) {
+        CFMutableDictionaryRef props = NULL;
+        if (IORegistryEntryCreateCFProperties(
+                serv, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS && props) {
+
+            // Shape 1: classic IODisplayConnect.
+            CFDictionaryRef names = CFDictionaryGetValue(
+                props, CFSTR(kDisplayProductName));
+            if (names && CFGetTypeID(names) == CFDictionaryGetTypeID() &&
+                (uint32_t)dict_int(props, CFSTR(kDisplayVendorID))
+                    == want_vendor &&
+                (uint32_t)dict_int(props, CFSTR(kDisplayProductID))
+                    == want_product &&
+                CFDictionaryGetCount(names) > 0) {
+                CFIndex count = CFDictionaryGetCount(names);
+                const void **values = malloc(count * sizeof(void *));
+                if (values) {
+                    CFDictionaryGetKeysAndValues(names, NULL, values);
+                    result = cfstring_to_cstring((CFStringRef)values[0]);
+                    free(values);
+                }
+            }
+
+            // Shape 2: Apple-Silicon IOMobileFramebuffer.
+            if (!result) {
+                CFDictionaryRef attrs = CFDictionaryGetValue(
+                    props, CFSTR("DisplayAttributes"));
+                if (attrs && CFGetTypeID(attrs) == CFDictionaryGetTypeID()) {
+                    CFDictionaryRef pa = CFDictionaryGetValue(
+                        attrs, CFSTR("ProductAttributes"));
+                    if (pa && CFGetTypeID(pa) == CFDictionaryGetTypeID() &&
+                        (uint32_t)dict_int(pa, CFSTR("LegacyManufacturerID"))
+                            == want_vendor &&
+                        (uint32_t)dict_int64(pa, CFSTR("ProductID"))
+                            == want_product) {
+                        CFStringRef nm = CFDictionaryGetValue(
+                            pa, CFSTR("ProductName"));
+                        result = cfstring_to_cstring(nm);
+                    }
+                }
+            }
+
+            CFRelease(props);
+        }
+        IOObjectRelease(serv);
+    }
+    IOObjectRelease(iter);
+    return result;
+}
+
+// CGDisplayModeGetRefreshRate returns 0 for built-in displays on some macOS
+// versions. Fall back to CoreVideo's nominal output refresh period.
+static double display_refresh_fallback(CGDirectDisplayID display_id) {
+    double hz = 0.0;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    CVDisplayLinkRef link = NULL;
+    if (CVDisplayLinkCreateWithCGDisplay(display_id, &link) == kCVReturnSuccess
+        && link) {
+        CVTime period = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(link);
+        if (!(period.flags & kCVTimeIsIndefinite) && period.timeValue > 0) {
+            hz = (double)period.timeScale / (double)period.timeValue;
+        }
+        CVDisplayLinkRelease(link);
+    }
+#pragma clang diagnostic pop
+    return hz;
+}
+
+// Display configuration: per-monitor name, resolution, refresh, scale, main.
+static cJSON *collect_display(void) {
+    cJSON *displays = cJSON_CreateArray();
+
+    CGDirectDisplayID active[16];
+    uint32_t count = 0;
+    if (CGGetActiveDisplayList(16, active, &count) != kCGErrorSuccess)
+        return displays;
+
+    CGDirectDisplayID main_id = CGMainDisplayID();
+
+    for (uint32_t i = 0; i < count; i++) {
+        CGDirectDisplayID id = active[i];
+        cJSON *d = cJSON_CreateObject();
+
+        char *nm = display_name(id);
+        if (nm) {
+            cJSON_AddStringToObject(d, "name", nm);
+            free(nm);
+        } else if (CGDisplayIsBuiltin(id)) {
+            // Apple Silicon built-in panels don't expose a `ProductName` via
+            // public IOKit APIs — fall back to a generic label.
+            cJSON_AddStringToObject(d, "name", "Built-in Display");
+        }
+
+        cJSON_AddNumberToObject(d, "id", (double)id);
+        cJSON_AddBoolToObject(d, "main", id == main_id);
+
+        const char *connection;
+        if (CGDisplayMirrorsDisplay(id) != kCGNullDirectDisplay) {
+            connection = "mirrored";
+        } else if (CGDisplayIsBuiltin(id)) {
+            connection = "internal";
+        } else {
+            connection = "external";
+        }
+        cJSON_AddStringToObject(d, "connection", connection);
+
+        CGDisplayModeRef mode = CGDisplayCopyDisplayMode(id);
+        if (mode) {
+            size_t pw = CGDisplayModeGetPixelWidth(mode);
+            size_t ph = CGDisplayModeGetPixelHeight(mode);
+            size_t lw = CGDisplayModeGetWidth(mode);
+            size_t lh = CGDisplayModeGetHeight(mode);
+
+            cJSON *res_px = cJSON_CreateArray();
+            cJSON_AddItemToArray(res_px, cJSON_CreateNumber((double)pw));
+            cJSON_AddItemToArray(res_px, cJSON_CreateNumber((double)ph));
+            cJSON_AddItemToObject(d, "resolution_pixels", res_px);
+
+            cJSON *res_log = cJSON_CreateArray();
+            cJSON_AddItemToArray(res_log, cJSON_CreateNumber((double)lw));
+            cJSON_AddItemToArray(res_log, cJSON_CreateNumber((double)lh));
+            cJSON_AddItemToObject(d, "resolution_logical", res_log);
+
+            if (lw > 0) {
+                cJSON_AddNumberToObject(d, "scale",
+                                        (double)pw / (double)lw);
+            }
+
+            double hz = CGDisplayModeGetRefreshRate(mode);
+            if (hz <= 0.0) hz = display_refresh_fallback(id);
+            if (hz > 0.0) cJSON_AddNumberToObject(d, "refresh_hz", hz);
+
+            // Refresh range across all modes at the same pixel resolution.
+            CFArrayRef all_modes = CGDisplayCopyAllDisplayModes(id, NULL);
+            if (all_modes) {
+                double min_hz = 0.0, max_hz = 0.0;
+                CFIndex n_modes = CFArrayGetCount(all_modes);
+                for (CFIndex j = 0; j < n_modes; j++) {
+                    CGDisplayModeRef m = (CGDisplayModeRef)
+                        CFArrayGetValueAtIndex(all_modes, j);
+                    if (CGDisplayModeGetPixelWidth(m) != pw ||
+                        CGDisplayModeGetPixelHeight(m) != ph)
+                        continue;
+                    double r = CGDisplayModeGetRefreshRate(m);
+                    if (r <= 0.0) continue;
+                    if (min_hz == 0.0 || r < min_hz) min_hz = r;
+                    if (r > max_hz) max_hz = r;
+                }
+                CFRelease(all_modes);
+                if (min_hz > 0.0 && max_hz > min_hz) {
+                    cJSON *range = cJSON_CreateArray();
+                    cJSON_AddItemToArray(range, cJSON_CreateNumber(min_hz));
+                    cJSON_AddItemToArray(range, cJSON_CreateNumber(max_hz));
+                    cJSON_AddItemToObject(d, "refresh_range_hz", range);
+                }
+            }
+
+            CGDisplayModeRelease(mode);
+        }
+
+        cJSON_AddItemToArray(displays, d);
+    }
+
+    return displays;
+}
+
 // Thermal pressure level via kern.thermalpressure sysctl.
 static cJSON *collect_thermal(void) {
     cJSON *thermal = cJSON_CreateObject();
@@ -562,8 +788,9 @@ static cJSON *handle_tools_list(void) {
     cJSON_AddStringToObject(tool, "description",
         "Report hardware and OS information: CPU (cores, brand, P/E split), "
         "memory (total, free, used, compressed), GPU (model, cores, VRAM), "
-        "disk (total, free, used), OS (version, hostname, uptime), and "
-        "thermal pressure. Pass 'categories' to select specific sections "
+        "disk (total, free, used), OS (version, hostname, uptime), display "
+        "(per-monitor resolution, refresh, scale, main flag), and thermal "
+        "pressure. Pass 'categories' to select specific sections "
         "(e.g. [\"cpu\", \"memory\"]) or omit for all.");
 
     cJSON *schema = cJSON_CreateObject();
@@ -585,6 +812,7 @@ static cJSON *handle_tools_list(void) {
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("network"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("power"));
     cJSON_AddItemToArray(cat_enum, cJSON_CreateString("thermal"));
+    cJSON_AddItemToArray(cat_enum, cJSON_CreateString("display"));
     cJSON_AddItemToObject(items, "enum", cat_enum);
     cJSON_AddItemToObject(cat, "items", items);
     cJSON_AddItemToObject(props, "categories", cat);
@@ -638,6 +866,7 @@ static cJSON *handle_tools_call(cJSON *params) {
     if (WANT("network")) cJSON_AddItemToObject(data, "network", collect_network());
     if (WANT("power"))   cJSON_AddItemToObject(data, "power", collect_power());
     if (WANT("thermal")) cJSON_AddItemToObject(data, "thermal", collect_thermal());
+    if (WANT("display")) cJSON_AddItemToObject(data, "display", collect_display());
 
     #undef WANT
 
@@ -662,8 +891,8 @@ static const char HELP[] =
     "Usage: sysinfo-mcp [OPTIONS]\n"
     "\n"
     "Runs an MCP server on stdio, exposing a single tool (system_info)\n"
-    "that reports CPU, memory, GPU, disk, OS, network, power, and thermal\n"
-    "information.\n"
+    "that reports CPU, memory, GPU, disk, OS, network, power, thermal, and\n"
+    "display information.\n"
     "\n"
     "Options:\n"
     "  --version      Print version and exit\n"
@@ -699,6 +928,7 @@ static const char AGENT_GUIDE[] =
     "| `collect_network()` | `\"network\"` | array of interface objects |\n"
     "| `collect_power()` | `\"power\"` | object |\n"
     "| `collect_thermal()` | `\"thermal\"` | object |\n"
+    "| `collect_display()` | `\"display\"` | array of display objects |\n"
     "\n"
     "**Protocol handlers** (`main.c:496–647`):\n"
     "- `handle_initialize()` — returns server capabilities and `serverInfo`\n"
