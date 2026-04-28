@@ -19,7 +19,7 @@ BINDIR  := $(PREFIX)/bin
 SRC     := main.c vendor/cjson/cJSON.c
 BIN     := sysinfo-mcp
 
-.PHONY: all clean install
+.PHONY: all clean install bullseye
 
 all: $(BIN)
 
@@ -32,3 +32,8 @@ clean:
 install: $(BIN)
 	install -d $(BINDIR)
 	install -m 755 $(BIN) $(BINDIR)/$(BIN)
+
+bullseye: $(BIN)
+	@echo "✓ build"
+	@test -z "$$(git status --porcelain)" && echo "✓ clean tree" || \
+	 (echo "✗ dirty tree"; git status --short; exit 1)
