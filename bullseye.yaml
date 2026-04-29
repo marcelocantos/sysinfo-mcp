@@ -13,10 +13,11 @@ targets:
     achieved: 2026-04-12
   T2:
     name: '`system_info` reports display configuration: per-monitor resolution, refresh rate, scale, and main-display flag'
-    status: identified
+    status: achieved
     value: 0.0
     cost: 0.0
     showcase: true
+    demonstration: 'Ran the merged binary with `categories=["display"]` over JSON-RPC stdio and showed the user a 2-display response: built-in M4 Max panel (id=1, main=true, internal, 4112×2658px → 2056×1329 logical, scale=2, 120 Hz, "Built-in Display") and an external LG ULTRAFINE (id=3, main=false, external, 6720×3780px → 3360×1890 logical, scale=2, 60 Hz, name pulled from IOMobileFramebuffer''s DisplayAttributes.ProductAttributes.ProductName). `tests/run.sh` confirmed contract (≥1 display, exactly one main, positive refresh, shape stable). Delivered via PR #2, squash-merged to master as commit 7c1610c.'
     acceptance:
     - A new `display` (or `displays`) category is added to the `categories` enum of the `system_info` tool's schema.
     - 'When invoked with `categories: ["display"]` (or with no categories — full report), the tool returns one entry per connected display.'
@@ -68,3 +69,4 @@ targets:
       This target keeps sysinfo's tight scope (read-only, no shell-outs, structured JSON) and fits cleanly into the existing categories enum. No tool-name churn, no API redesign — additive only.
     origin: manual
     discovered: 2026-04-28
+    achieved: 2026-04-29
