@@ -18,3 +18,9 @@ maintenance activities. Append-only — newest entries at the bottom.
 
 - **Commit**: `a090425`
 - **Outcome**: Released v0.2.0 (darwin-arm64). Added complete MCP installation instructions to README and agents-guide, Homebrew install command, copy-pasteable agent prompt.
+
+## 2026-04-29 — /release v0.3.0
+
+- **Commit**: pending
+- **Outcome**: Released v0.3.0 (darwin-arm64). Added `display` category to `system_info` (per-monitor name, id, main flag, connection, pixel/logical resolution, scale, refresh, optional refresh range; PR #2). Added PR CI workflow running `make bullseye` on `macos-latest` for every PR and push to master (PR #3). Added `tests/run.sh` smoke test and `make bullseye` standing-invariants hook. STABILITY.md updated to add the `display` surface and remove the resolved CI/tests gaps (test gap narrowed to per-category coverage rather than absence of tests).
+- **Deferred**: Per-category round-trip tests for cpu/memory/gpu/disk/os/network/power/thermal still missing (STABILITY.md gap). ProMotion variable refresh range not enumerable via public APIs (only discrete-mode ranges populate `refresh_range_hz`).
