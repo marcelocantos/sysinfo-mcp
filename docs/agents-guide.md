@@ -26,6 +26,7 @@ Makefile            — build entry point
 | `collect_network()` | `"network"` | array of interface objects |
 | `collect_power()` | `"power"` | object |
 | `collect_thermal()` | `"thermal"` | object |
+| `collect_display()` | `"display"` | array of per-monitor objects |
 
 **Protocol handlers** (`main.c:496–647`):
 - `handle_initialize()` — returns server capabilities and `serverInfo`
@@ -67,7 +68,7 @@ For other MCP clients, add to the client config:
 make
 ```
 
-Requires macOS with Xcode Command Line Tools. Links: `IOKit`, `CoreFoundation`, `SystemConfiguration`.
+Requires macOS with Xcode Command Line Tools. Links: `IOKit`, `CoreFoundation`, `SystemConfiguration`, `ApplicationServices`, `CoreVideo`.
 
 ## Adding a new category
 
