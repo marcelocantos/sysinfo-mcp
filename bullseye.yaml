@@ -70,3 +70,18 @@ targets:
     origin: manual
     discovered: 2026-04-28
     achieved: 2026-04-29
+  T3:
+    name: PR CI runs `make bullseye` on macos-latest for every PR, satisfying the ci-green pre-merge gate
+    status: achieved
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - A `.github/workflows/ci.yml` workflow exists that triggers on `pull_request` and on pushes to `master`.
+    - The workflow checks out the repo and runs `make bullseye` on `macos-latest`.
+    - The workflow runs to completion on every PR — `gh pr checks` returns at least one check.
+    - An open or merged PR demonstrates the workflow firing — checks visible in the PR's checks tab.
+    - The `ci-green` gate from `~/.claude/gates/base.yaml` is satisfiable for future PRs without skipping.
+    context: 'Discovered while delivering 🎯T2 (display category): the only existing workflow (`release.yml`) fires on `release.published`, so PRs had no CI checks and the `ci-green` pre-merge gate from the base profile had to be skipped. Adding `make bullseye` to PR CI catches build/test regressions before merge instead of at release time. `macos-latest` is mandatory because the project links IOKit, CoreGraphics, ApplicationServices, and CoreVideo (no Linux runner can build it).'
+    origin: forked-from 🎯T2 — display category PR could not satisfy ci-green gate
+    discovered: 2026-04-29
+    achieved: 2026-04-29
