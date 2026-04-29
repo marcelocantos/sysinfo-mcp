@@ -23,7 +23,7 @@ optional fields) are not breaking.
 | Method: `tools/list` | Returns tool schema array | Stable |
 | Method: `tools/call` | Dispatches named tool | Stable |
 | Server name | `sysinfo` | Stable |
-| Server version | `0.1.0` | Fluid (increments on release) |
+| Server version | `0.3.0` | Fluid (increments on release) |
 | Error code `-32700` | Parse error | Stable |
 | Error code `-32600` | Invalid request | Stable |
 | Error code `-32601` | Method not found | Stable |
@@ -44,7 +44,7 @@ optional fields) are not breaking.
 |---|---|---|
 | Tool name | `system_info` | Stable |
 | Parameter: `categories` | Optional. Array of strings. Omit for all. | Stable |
-| Category enum values | `cpu`, `memory`, `gpu`, `disk`, `os`, `network`, `power`, `thermal` | Stable |
+| Category enum values | `cpu`, `memory`, `gpu`, `disk`, `os`, `network`, `power`, `thermal`, `display` | Stable |
 | Unknown category value | Silently ignored (no error) | Needs review |
 | Result format | `content` array with single `type: "text"` item containing JSON | Stable |
 | `isError` flag on unknown tool | Present and `true` | Stable |
@@ -177,6 +177,30 @@ The `thermal` key holds a JSON object.
 `NSProcessInfoThermalState` levels but relies on undocumented sysctl semantics.
 Needs verification against Apple documentation before 1.0.
 
+### Output fields: `display`
+
+The `display` key holds a JSON array. Each element represents one connected
+display.
+
+| Field | Type | Condition | Status |
+|---|---|---|---|
+| `name` | string | When IORegistry exposes a `ProductName`; falls back to `"Built-in Display"` for built-in panels with no public name | Needs review |
+| `id` | number | Always (`CGDirectDisplayID`) | Stable |
+| `main` | boolean | Always; exactly one entry per call has `true` | Stable |
+| `connection` | string (`"internal"`, `"external"`, `"mirrored"`) | Always | Stable |
+| `resolution_pixels` | array of two numbers `[w, h]` | When `CGDisplayCopyDisplayMode` succeeds | Stable |
+| `resolution_logical` | array of two numbers `[w, h]` | When `CGDisplayCopyDisplayMode` succeeds | Stable |
+| `scale` | number | When `resolution_logical[0] > 0` (= pixels/logical) | Stable |
+| `refresh_hz` | number | When `CGDisplayModeGetRefreshRate` > 0 or CoreVideo fallback returns a finite period | Needs review |
+| `refresh_range_hz` | array of two numbers `[min, max]` | When multiple discrete refresh rates exist for the current pixel resolution | Needs review |
+
+The `name` fallback covers Apple Silicon built-in panels, which expose no
+public `ProductName` via IOKit; the literal string `"Built-in Display"` may
+be replaced with a richer identifier (e.g. derived from `hw.model`) before
+1.0. `refresh_range_hz` only fires when the display mode array contains
+multiple rates at the same pixel resolution; ProMotion's variable refresh
+range is not enumerated this way and is therefore not reported.
+
 ---
 
 ## Annotation key
@@ -194,13 +218,10 @@ Needs verification against Apple documentation before 1.0.
 The following must be resolved before 1.0 is tagged.
 
 **Testing**
-- No automated tests exist. A baseline test suite is required: at minimum,
-  round-trip JSON-RPC tests for `initialize`, `tools/list`, and
-  `tools/call` for each category.
-
-**CI**
-- No CI pipeline. A build-and-test workflow (GitHub Actions, macOS arm64) is
-  required before 1.0.
+- A `tests/run.sh` smoke test exists driving `tools/call` for the `display`
+  category. Coverage gap: per-category round-trip tests for `cpu`, `memory`,
+  `gpu`, `disk`, `os`, `network`, `power`, `thermal` are still missing and
+  should be added before 1.0.
 
 **Disk reporting**
 - Only `/` is reported. This is a known limitation. Before 1.0, decide whether
