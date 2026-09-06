@@ -57,12 +57,12 @@ Accepts an optional `categories` array. Omitting it returns all categories.
 | `cpu`     | Core counts, brand, frequency                    |
 | `memory`  | Total, free, used, and compressed RAM            |
 | `gpu`     | GPU model(s), VRAM, core count                   |
-| `disk`    | Disk capacity and usage per mount                |
+| `disk`    | Capacity and usage of `/` (no other mounts)      |
 | `os`      | Kernel info, macOS version, hostname, boot time  |
-| `network` | Network interfaces, IPs, MACs, primary/router    |
+| `network` | Network interfaces, IPs, MACs, primary flag      |
 | `power`   | Battery level, health, charging state, source    |
-| `thermal` | Thermal pressure level                           |
-| `display` | Per-monitor name, resolution, refresh, scale     |
+| `thermal` | Thermal pressure level, where the OS exposes it  |
+| `display` | Per-monitor name, resolution, refresh, scale (awake screens only) |
 
 ## Output schema
 
@@ -74,8 +74,8 @@ Accepts an optional `categories` array. Omitting it returns all categories.
 | `logical_cores`      | int    |                              |
 | `performance_cores`  | int    | Apple Silicon only           |
 | `efficiency_cores`   | int    | Apple Silicon only           |
-| `brand`              | string | Intel only (typically)       |
-| `frequency_hz`       | double | May be absent on Apple Silicon |
+| `brand`              | string | Present on Apple Silicon and Intel |
+| `frequency_hz`       | double | From `hw.cpufrequency`; absent on Apple Silicon |
 
 ### `memory`
 
@@ -98,7 +98,7 @@ Accepts an optional `categories` array. Omitting it returns all categories.
 
 | Field         | Type   | Notes |
 |---------------|--------|-------|
-| `mount`       | string |       |
+| `mount`       | string | Always `"/"` — see Known limitations |
 | `total_bytes` | double |       |
 | `free_bytes`  | double |       |
 | `used_bytes`  | double |       |
@@ -123,8 +123,8 @@ Accepts an optional `categories` array. Omitting it returns all categories.
 | `ipv4`   | string |                                          |
 | `ipv6`   | string | Non-link-local only; omitted if absent   |
 | `mac`    | string | Omitted if all-zero                      |
-| `primary`| bool   | Present and `true` on primary interface  |
-| `router` | string | Gateway IP; present on primary interface |
+| `primary`| bool   | Present and `true` on primary interface; absent elsewhere |
+| `router` | string | Gateway IP. **Not currently emitted** — see Known limitations |
 
 ### `power`
 
@@ -144,7 +144,7 @@ Accepts an optional `categories` array. Omitting it returns all categories.
 
 | Field      | Type   | Notes                                              |
 |------------|--------|----------------------------------------------------|
-| `pressure` | string | `"nominal"`, `"moderate"`, `"heavy"`, `"critical"`, `"unknown"` |
+| `pressure` | string | `"nominal"`, `"moderate"`, `"heavy"`, `"critical"`, `"unknown"`. Present only when the `kern.thermalpressure` sysctl exists; the object is otherwise empty |
 
 ### `display` (array)
 
@@ -168,7 +168,8 @@ Accepts an optional `categories` array. Omitting it returns all categories.
     "physical_cores": 16,
     "logical_cores": 16,
     "performance_cores": 12,
-    "efficiency_cores": 4
+    "efficiency_cores": 4,
+    "brand": "Apple M4 Max"
   },
   "memory": {
     "total_bytes": 137438953472,
@@ -205,22 +206,24 @@ Accepts an optional `categories` array. Omitting it returns all categories.
       "ipv4": "192.168.1.42",
       "ipv6": "2001:db8::1",
       "mac": "aa:bb:cc:dd:ee:ff",
-      "primary": true,
-      "router": "192.168.1.1"
+      "primary": true
     },
     {
       "name": "en1",
-      "ipv4": "10.0.0.5",
       "mac": "aa:bb:cc:dd:ee:00"
     }
   ],
   "power": {
-    "has_battery": false,
-    "power_source": "ac"
+    "has_battery": true,
+    "battery_percent": 78,
+    "capacity_mah": 5603,
+    "max_capacity_mah": 7580,
+    "battery_health_percent": 88.35528616388856,
+    "charging": false,
+    "power_source": "ac",
+    "cycle_count": 137
   },
-  "thermal": {
-    "pressure": "nominal"
-  },
+  "thermal": {},
   "display": [
     {
       "name": "Built-in Display",
@@ -245,6 +248,44 @@ Accepts an optional `categories` array. Omitting it returns all categories.
   ]
 }
 ```
+
+## Known limitations
+
+Verified against the shipped binary on macOS 26.6.2 (Apple Silicon):
+
+- **`display` reports nothing while the screens are asleep.** With the panels
+  asleep, `CGGetOnlineDisplayList` returns no displays, so `display` comes back
+  `[]` and `tests/run.sh` fails with "expected ≥1 display, got 0" — even though
+  `system_profiler SPDisplaysDataType` still lists them (as `Display Asleep:
+  Yes`). The same binary in the same shell returned both monitors once the
+  screens were awake. Wake the display before trusting this category or running
+  `make test`.
+- **`thermal` is empty on macOS 26.** The `pressure` field needs the
+  `kern.thermalpressure` sysctl, which that release no longer provides
+  (`sysctl: unknown oid`). The category returns `{}` rather than an error.
+- **`network.router` is never emitted.** The lookup is gated on a key that is
+  absent from the dictionary it reads, so the field has no reachable producer.
+  See `docs/audits/entropy-audit-2026-08-22.md` (ENT-002).
+- **`disk` covers `/` only.** Other mounted filesystems are not enumerated.
+- **Unknown category names are ignored** rather than rejected, so a typo yields
+  a smaller report, not an error.
+
+`STABILITY.md` records which fields are committed for 1.0 and which may still
+change.
+
+## Development
+
+```bash
+make            # build ./sysinfo-mcp
+make test       # agent-guide drift check, then the display smoke test
+make bullseye   # build + test + clean-tree assertion; what CI runs on macOS
+make install    # install to $PREFIX/bin (default /usr/local/bin)
+```
+
+`make test` runs two checks. `tests/check-agent-guide.sh` asserts that the
+binary's `--help-agent` output still matches `docs/agents-guide.md`, which is
+the source of truth for that text. `tests/run.sh` drives the server over stdio
+and checks the display contract, so it needs an awake screen as noted above.
 
 ## Agent guide
 

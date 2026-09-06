@@ -37,8 +37,12 @@ install: $(BIN)
 
 # Smoke-test the binary by driving it with JSON-RPC over stdio and
 # checking the display category contract: ≥1 entry, exactly one main,
-# positive refresh rates, stable shape.
-test: $(BIN) tests/run.sh
+# positive refresh rates, stable shape. The display checks need a
+# window-server session; without one CoreGraphics reports no displays.
+# check-agent-guide asserts the binary's --help-agent text still matches
+# docs/agents-guide.md.
+test: $(BIN) tests/run.sh tests/check-agent-guide.sh
+	@./tests/check-agent-guide.sh
 	@./tests/run.sh
 
 bullseye: $(BIN) test
