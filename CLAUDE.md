@@ -46,6 +46,23 @@ The main loop reads JSON-RPC requests from stdin line by line, dispatches, and w
 
 delivery: merged to master
 
+Work lands on `master` by a gated push, not a pull request. Once per
+clone:
+
+```bash
+make hooks      # git config core.hooksPath scripts/hooks
+```
+
+`scripts/hooks/pre-push` then runs `make gate` — the `-Werror` build and
+`tests/run.sh` — and refuses the push on a non-zero exit. GitHub Actions
+runs the same `make gate` on `macos-latest` after the fact, and on
+inbound pull requests.
+
+`tests/run.sh` asserts the display contract, and `CGGetActiveDisplayList`
+returns nothing while the screen is asleep. The gate is therefore red on
+a sleeping Mac for a reason unrelated to the code; wake the display (or
+`caffeinate -u`) before pushing.
+
 ## Gates
 
 profile: base

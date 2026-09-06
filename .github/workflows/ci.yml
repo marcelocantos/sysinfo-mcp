@@ -7,13 +7,15 @@ on:
   pull_request:
   push:
     branches: [master]
+    tags: ['v*']
 
 jobs:
-  bullseye:
+  gate:
     runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Bullseye (build + tests + clean tree)
-        run: make bullseye
+      # Same recipe the local pre-push hook runs (scripts/hooks/pre-push).
+      - name: Gate (build + smoke tests)
+        run: make gate
