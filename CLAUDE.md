@@ -58,6 +58,12 @@ make hooks      # git config core.hooksPath scripts/hooks
 runs the same `make gate` on `macos-latest` after the fact, and on
 inbound pull requests.
 
+`make gate` prints a **residue ledger**: the assertions it did not exercise
+on this host. "At least one display" is host state, not a code invariant
+(`CGGetActiveDisplayList` reports nothing while the screens are asleep), so
+it runs only under `SYSINFO_REQUIRE_DISPLAY=1` and is declared otherwise.
+See [`docs/gate.md`](docs/gate.md).
+
 `tests/run.sh` asserts the display contract, and `CGGetActiveDisplayList`
 returns nothing while the screen is asleep. The gate is therefore red on
 a sleeping Mac for a reason unrelated to the code; wake the display (or
