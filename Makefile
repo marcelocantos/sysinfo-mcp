@@ -21,7 +21,7 @@ BINDIR  := $(PREFIX)/bin
 SRC     := main.c vendor/cjson/cJSON.c
 BIN     := sysinfo-mcp
 
-.PHONY: all clean install test bullseye
+.PHONY: all clean install test bullseye gate hooks
 
 all: $(BIN)
 
@@ -41,8 +41,22 @@ install: $(BIN)
 test: $(BIN) tests/run.sh
 	@./tests/run.sh
 
-bullseye: $(BIN) test
+# The pre-push gate (scripts/hooks/pre-push runs this; CI runs the same
+# recipe). Existing oracles only — the -Werror build and the stdio smoke
+# suite. Exit code is the signal: 0 means all green.
+gate: $(BIN) test
 	@echo "✓ build"
 	@echo "✓ tests"
+
+# Wire the pre-push gate into this clone. A relative core.hooksPath
+# resolves against whichever worktree the push runs from, so one setting
+# covers every `git worktree`.
+hooks:
+	git config core.hooksPath scripts/hooks
+	@echo "✓ core.hooksPath = scripts/hooks"
+
+# Standing invariants for bullseye_convergence: the gate plus a clean-tree
+# check that only makes sense interactively.
+bullseye: gate
 	@test -z "$$(git status --porcelain)" && echo "✓ clean tree" || \
 	 (echo "✗ dirty tree"; git status --short; exit 1)
