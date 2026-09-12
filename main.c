@@ -409,28 +409,29 @@ static cJSON *collect_power(void) {
             CFRelease(rawcur);
         }
 
+        int max_mah = 0;
+        int have_rawmax = 0;
         CFNumberRef rawmax = IORegistryEntryCreateCFProperty(
             battery, CFSTR("AppleRawMaxCapacity"), NULL, 0);
         if (rawmax) {
-            int mah = 0;
-            CFNumberGetValue(rawmax, kCFNumberIntType, &mah);
-            cJSON_AddNumberToObject(power, "max_capacity_mah", mah);
+            CFNumberGetValue(rawmax, kCFNumberIntType, &max_mah);
+            cJSON_AddNumberToObject(power, "max_capacity_mah", max_mah);
             CFRelease(rawmax);
+            rawmax = NULL;
+            have_rawmax = 1;
         }
 
         CFNumberRef designcap = IORegistryEntryCreateCFProperty(
             battery, CFSTR("DesignCapacity"), NULL, 0);
-        if (designcap && rawmax) {
-            int design = 0, max = 0;
+        if (designcap && have_rawmax) {
+            int design = 0;
             CFNumberGetValue(designcap, kCFNumberIntType, &design);
-            CFNumberGetValue(rawmax, kCFNumberIntType, &max);
             if (design > 0) {
                 cJSON_AddNumberToObject(power, "battery_health_percent",
-                                        (double)max * 100.0 / design);
+                                        (double)max_mah * 100.0 / design);
             }
         }
         if (designcap) CFRelease(designcap);
-        if (rawmax) CFRelease(rawmax);
 
         CFBooleanRef charging = IORegistryEntryCreateCFProperty(
             battery, CFSTR("IsCharging"), NULL, 0);

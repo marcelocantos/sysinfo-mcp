@@ -60,3 +60,29 @@ if [[ "$missing" -ne 0 ]]; then
 fi
 
 echo "ok: $count display(s), $mains main, all shapes valid"
+
+# Power category: on a battery Mac the health figure must be present and
+# sane. Desktop CI without a battery skips the numeric assertion.
+power_raw=$(printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"system_info","arguments":{"categories":["power"]}}}' \
+    | "$BIN" | tail -1)
+
+power=$(printf '%s' "$power_raw" | jq -r '.result.content[0].text' | jq '.power')
+has_battery=$(printf '%s' "$power" | jq -r '.has_battery')
+if [[ "$has_battery" == "true" ]]; then
+    health=$(printf '%s' "$power" | jq -r '.battery_health_percent // empty')
+    if [[ -z "$health" ]]; then
+        echo "FAIL: has_battery is true but battery_health_percent is missing" >&2
+        printf '%s' "$power" | jq . >&2
+        exit 1
+    fi
+    in_range=$(printf '%s' "$power" | jq '.battery_health_percent > 0 and .battery_health_percent <= 200')
+    if [[ "$in_range" != "true" ]]; then
+        echo "FAIL: battery_health_percent=$health is not in (0, 200]" >&2
+        exit 1
+    fi
+    echo "ok: power has_battery, battery_health_percent=$health"
+else
+    echo "ok: power has_battery=false (health assertion skipped)"
+fi

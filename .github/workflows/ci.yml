@@ -15,5 +15,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Bullseye (build + tests + clean tree)
+      - name: Static analysis (RetainCount ratchet)
+        run: make analyze
+
+      - name: Bullseye (build + tests + analyze + clean tree)
         run: make bullseye
