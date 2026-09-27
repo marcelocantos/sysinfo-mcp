@@ -159,10 +159,17 @@ The `power` key holds a JSON object.
 | `charging` | boolean | When battery present and `IsCharging` available | Stable |
 | `cycle_count` | number | When battery present and `CycleCount` available | Stable |
 | `time_remaining_minutes` | number | When battery present, `TimeRemaining` in [1, 5999] | Needs review |
+| `battery_temperature_c` | number | When battery present and `Temperature` is a number | Needs review |
 
 `battery_health_percent` = `AppleRawMaxCapacity / DesignCapacity * 100`.
 The formula is correct but the field name may shift to `health_percent` for
 clarity before 1.0.
+
+`battery_temperature_c` is AppleSmartBattery `Temperature` converted from
+deciKelvin (`raw / 10 − 273.15`). IOKit exposes that key without elevated
+privileges on Apple Silicon laptops. The unit is not a public API contract,
+so the field stays Needs review. It is battery temperature only — not die
+or fan temperature. Absent when there is no battery or the key is missing.
 
 ### Output fields: `thermal`
 

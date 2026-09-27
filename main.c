@@ -415,7 +415,6 @@ static cJSON *collect_power(void) {
             int mah = 0;
             CFNumberGetValue(rawmax, kCFNumberIntType, &mah);
             cJSON_AddNumberToObject(power, "max_capacity_mah", mah);
-            CFRelease(rawmax);
         }
 
         CFNumberRef designcap = IORegistryEntryCreateCFProperty(
@@ -467,6 +466,25 @@ static cJSON *collect_power(void) {
                 cJSON_AddNumberToObject(power, "time_remaining_minutes", mins);
             }
             CFRelease(timeleft);
+        }
+
+        // AppleSmartBattery Temperature is an integer in deciKelvin.
+        // 3050 → 31.85 °C. Omitted when the property is absent; no
+        // substitute sensor is invented.
+        CFNumberRef temp = IORegistryEntryCreateCFProperty(
+            battery, CFSTR("Temperature"), NULL, 0);
+        if (temp) {
+            if (CFGetTypeID(temp) == CFNumberGetTypeID()) {
+                int deci_k = 0;
+                if (CFNumberGetValue(temp, kCFNumberIntType, &deci_k)) {
+                    // (deciKelvin − 2731.5) / 10, in hundredths of a degree,
+                    // so 0.05 °C values stay exact in the JSON number.
+                    long hundredths = ((long)deci_k * 2 - 5463) * 5;
+                    cJSON_AddNumberToObject(
+                        power, "battery_temperature_c", hundredths / 100.0);
+                }
+            }
+            CFRelease(temp);
         }
 
         IOObjectRelease(battery);

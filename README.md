@@ -139,6 +139,7 @@ Accepts an optional `categories` array. Omitting it returns all categories.
 | `power_source`          | string | `"ac"` or `"battery"`                   |
 | `cycle_count`           | int    |                                          |
 | `time_remaining_minutes`| int    | Only when on battery and estimate valid  |
+| `battery_temperature_c` | double | Celsius from AppleSmartBattery `Temperature` (deciKelvin); omitted if absent |
 
 ### `thermal`
 
