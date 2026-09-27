@@ -333,41 +333,36 @@ static cJSON *collect_network(void) {
                 kSCDynamicStorePropNetPrimaryInterface);
             if (primary) {
                 char pname[64];
-                CFStringGetCString(primary, pname, sizeof(pname),
-                                   kCFStringEncodingUTF8);
-                // Mark the primary interface
+                if (!CFStringGetCString(primary, pname, sizeof(pname),
+                                        kCFStringEncodingUTF8)) {
+                    pname[0] = '\0';
+                }
+
+                // The global IPv4 entity dictionary holds Router as a
+                // CFString. kSCEntNetIPv4 is the entity name, not a key
+                // in this dictionary, so it must not gate the lookup.
+                char rbuf[64];
+                int have_router = 0;
+                CFTypeRef router = CFDictionaryGetValue(
+                    global, kSCPropNetIPv4Router);
+                if (router && CFGetTypeID(router) == CFStringGetTypeID() &&
+                    CFStringGetCString((CFStringRef)router, rbuf, sizeof(rbuf),
+                                       kCFStringEncodingUTF8) &&
+                    rbuf[0] != '\0') {
+                    have_router = 1;
+                }
+
                 int n = cJSON_GetArraySize(interfaces);
                 for (int i = 0; i < n; i++) {
                     cJSON *entry = cJSON_GetArrayItem(interfaces, i);
                     cJSON *nm = cJSON_GetObjectItem(entry, "name");
-                    if (nm && strcmp(nm->valuestring, pname) == 0) {
+                    if (nm && pname[0] &&
+                        strcmp(nm->valuestring, pname) == 0) {
                         cJSON_AddBoolToObject(entry, "primary", 1);
-                        break;
-                    }
-                }
-
-                // Get router
-                CFStringRef router = CFDictionaryGetValue(global,
-                    kSCEntNetIPv4);
-                if (router) {
-                    // Router is in the Router key
-                    CFArrayRef routers = CFDictionaryGetValue(global,
-                        CFSTR("Router"));
-                    if (routers && CFGetTypeID(routers) == CFStringGetTypeID()) {
-                        char rbuf[64];
-                        CFStringGetCString((CFStringRef)routers, rbuf,
-                                           sizeof(rbuf),
-                                           kCFStringEncodingUTF8);
-                        // Add to primary interface
-                        int nn = cJSON_GetArraySize(interfaces);
-                        for (int j = 0; j < nn; j++) {
-                            cJSON *entry = cJSON_GetArrayItem(interfaces, j);
-                            cJSON *nm = cJSON_GetObjectItem(entry, "name");
-                            if (nm && strcmp(nm->valuestring, pname) == 0) {
-                                cJSON_AddStringToObject(entry, "router", rbuf);
-                                break;
-                            }
+                        if (have_router) {
+                            cJSON_AddStringToObject(entry, "router", rbuf);
                         }
+                        break;
                     }
                 }
             }

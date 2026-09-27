@@ -133,16 +133,15 @@ interface.
 | `ipv6` | string | First non-link-local AF_INET6 address | Needs review |
 | `mac` | string (xx:xx:xx:xx:xx:xx) | When AF_LINK with 6-byte hardware address, non-zero | Stable |
 | `primary` | boolean (true) | On the interface identified as primary by SCDynamicStore | Needs review |
-| `router` | string | When SCDynamicStore `Router` key is a CFString on the primary interface | Needs review |
+| `router` | string | When SCDynamicStore `Router` key is a non-empty CFString on the primary interface | Stable |
 
 Loopback and down interfaces are excluded. Only the first non-link-local IPv6
 address per interface is reported. `primary` is absent (not false) on
 non-primary interfaces.
 
-`router` detection reads `SCDynamicStoreDomainState/Network/Global/IPv4 ->
-Router`. The retrieval path has a logic issue in the current implementation
-(conflating a CFDictionaryRef check with a CFStringRef cast); this field is
-unreliable and needs review before 1.0.
+`router` is the IPv4 gateway from `State:/Network/Global/IPv4` key `Router`
+(a CFString), attached to the primary interface. Absent when that key is
+missing or not a non-empty string.
 
 ### Output fields: `power`
 
@@ -168,8 +167,8 @@ clarity before 1.0.
 `battery_temperature_c` is AppleSmartBattery `Temperature` converted from
 deciKelvin (`raw / 10 − 273.15`). IOKit exposes that key without elevated
 privileges on Apple Silicon laptops. The unit is not a public API contract,
-so the field stays Needs review. It is battery temperature only — not die
-or fan temperature. Absent when there is no battery or the key is missing.
+so the field stays Needs review. Absent when there is no battery or the key
+is missing.
 
 ### Output fields: `thermal`
 
@@ -234,11 +233,6 @@ The following must be resolved before 1.0 is tagged.
 - Only `/` is reported. This is a known limitation. Before 1.0, decide whether
   to enumerate all mounted filesystems (excluding pseudo-filesystems) or
   document the single-mount restriction as a permanent 1.0 constraint.
-
-**Network: router field reliability**
-- The `router` field in network output has a logic defect in the
-  SCDynamicStore retrieval path. Verify and fix before 1.0 or remove the
-  field.
 
 **Thermal pressure mapping**
 - The `kern.thermalpressure` integer-to-label mapping should be validated
