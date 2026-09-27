@@ -224,10 +224,10 @@ range is not enumerated this way and is therefore not reported.
 The following must be resolved before 1.0 is tagged.
 
 **Testing**
-- A `tests/run.sh` smoke test exists driving `tools/call` for the `display`
-  category. Coverage gap: per-category round-trip tests for `cpu`, `memory`,
-  `gpu`, `disk`, `os`, `network`, `power`, `thermal` are still missing and
-  should be added before 1.0.
+- `tests/run.sh` drives `tools/call` for every category: `cpu`, `memory`,
+  `gpu`, `disk`, `os`, `network`, `power`, `thermal`, and `display`.
+  Assertions cover the stable shape. A field the host does not expose (no
+  battery, no `Router` string, no `kern.thermalpressure`) is skipped.
 
 **Disk reporting**
 - Only `/` is reported. This is a known limitation. Before 1.0, decide whether

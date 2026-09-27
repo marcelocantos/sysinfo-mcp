@@ -35,9 +35,8 @@ install: $(BIN)
 	install -d $(BINDIR)
 	install -m 755 $(BIN) $(BINDIR)/$(BIN)
 
-# Smoke-test the binary by driving it with JSON-RPC over stdio and
-# checking the display category contract: ≥1 entry, exactly one main,
-# positive refresh rates, stable shape.
+# Smoke-test the binary by driving it with JSON-RPC over stdio.
+# tests/run.sh checks every system_info category.
 test: $(BIN) tests/run.sh
 	@./tests/run.sh
 
